@@ -1,159 +1,104 @@
-# Turborepo starter
+# FitMe Project Snapshot
 
-This Turborepo starter is maintained by the Turborepo core team.
+## Overview
 
-## Using this example
+FitMe is structured as a monorepo with explicit shared package boundaries so the web app does not own domain or persistence code that a future mobile app would also need.
 
-Run the following command:
+The current product flow is:
 
-```sh
-npx create-turbo@latest
+1. users complete a styling profile in the web app
+2. the app sends the profile to a local API route
+3. the route calls shared domain services in `@repo/api`
+4. the domain layer uses a shared persistence boundary in `@repo/db`
+5. recommendations are returned as shared DTOs from `@repo/types`
+
+This keeps the UI thin and makes it practical to add `apps/mobile` later without moving core logic again.
+
+## Monorepo Structure
+
+```text
+bunai-v1/
+├── apps/
+│   └── web/               # Next.js app and route handlers
+├── packages/
+│   ├── api/               # Server-side orchestration and provider calls
+│   ├── db/                # Shared repository/persistence contracts
+│   ├── types/             # Shared request/response contracts
+│   ├── ui/                # Shared presentational components
+│   ├── utils/             # Shared helpers such as env utilities
+│   ├── eslint-config/
+│   └── typescript-config/
+├── package.json
+├── pnpm-workspace.yaml
+└── turbo.json
 ```
 
-## What's inside?
+## Package Responsibilities
 
-This Turborepo includes the following packages/apps:
+### `apps/web`
 
-### Apps and Packages
+- owns pages, route handlers, and browser interactions
+- should stay thin
+- imports shared DTOs from `@repo/types`
+- imports orchestration from `@repo/api`
+- imports persistence factories from `@repo/db`
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### `packages/api`
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+- owns provider orchestration and server-side business logic
+- currently contains recommendation generation via Gemini
+- is the correct place for logic that both web and mobile backends should share
 
-### Utilities
+### `packages/db`
 
-This Turborepo has some additional tools already setup for you:
+- owns repository interfaces and persistence wiring
+- is intentionally separate from the web app so future mobile server endpoints can reuse the same data access layer
+- currently ships a no-op recommendation repository that can later be replaced with Supabase, Postgres, or another backing store without changing the UI contract
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+### `packages/types`
 
-### Build
+- owns DTO-style contracts shared across clients and server code
+- keeps request and response payloads stable across app boundaries
 
-To build all apps and packages, run the following command:
+### `packages/utils`
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+- owns low-level shared helpers
+- currently contains environment validation helpers used by the domain layer
 
-```sh
-cd my-turborepo
-turbo build
-```
+## Runtime Architecture
 
-Without global `turbo`, use your package manager:
+### 1. Client/UI Layer
 
-```sh
-cd my-turborepo
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
-```
+The web UI owns rendering, local interaction state, and API calls only.
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### 2. App Route Layer
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+`apps/web/app/api/*` acts as the transport boundary. Route handlers should:
 
-```sh
-turbo build --filter=docs
-```
+- validate and authenticate requests
+- call `@repo/api`
+- wire a repository implementation from `@repo/db`
+- return shared DTOs
 
-Without global `turbo`:
+### 3. Domain Layer
 
-```sh
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+`@repo/api` owns business logic and external provider integration. This is the layer a future mobile backend or worker should reuse directly.
 
-### Develop
+### 4. Persistence Layer
 
-To develop all apps and packages, run the following command:
+`@repo/db` is the shared database boundary. The current implementation is intentionally minimal, but the architectural seam is in place for a real database-backed repository.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Mobile Reuse Path
 
-```sh
-cd my-turborepo
-turbo dev
-```
+When you add `apps/mobile`, the intended reuse model is:
 
-Without global `turbo`, use your package manager:
+1. keep the mobile UI inside `apps/mobile`
+2. reuse `@repo/types` for payload contracts
+3. reuse `@repo/api` in server routes, edge functions, or a separate backend
+4. reuse `@repo/db` for shared persistence logic
 
-```sh
-cd my-turborepo
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
+That means the mobile app should not need to copy recommendation logic or data contracts out of the web app.
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Current Constraint
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+`@repo/db` currently provides a no-op repository instead of a real database adapter. That is deliberate scaffolding: the shared boundary now exists, but you still need to plug in Supabase or another database when you are ready to persist cross-platform data.

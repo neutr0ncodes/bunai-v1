@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import type { AuthChangeEvent, AuthError, Session, User as SupabaseUser } from '@supabase/supabase-js';
+import type {
+  BodyProfile,
+  StylePreferences,
+  BudgetBrand,
+  Recommendation,
+} from '@repo/types/recommendations';
+import { getSupabaseBrowserClient } from '../lib/supabase/client';
 import { 
   ChevronRight, 
   ChevronLeft, 
@@ -9,23 +17,17 @@ import {
   Upload, 
   Check, 
   Sparkles,
-  User,
+  User as UserIcon,
   ShoppingBag,
   Heart,
   Share2,
   ArrowRight,
   Info
 } from 'lucide-react';
-import { 
-  BodyProfile, 
-  StylePreferences, 
-  BudgetBrand, 
-  Recommendation,
-} from '../lib/gemini';
 
 // --- Types & Constants ---
 
-type Step = 'welcome' | 'profile' | 'photo' | 'preferences' | 'budget' | 'results';
+type Step = 'profile' | 'photo' | 'preferences' | 'budget' | 'results';
 
 const BODY_TYPES = [
   { id: 'slim', label: 'Slim', icon: '👤' },
@@ -68,7 +70,8 @@ const StepIndicator = ({ current, total }: { current: number; total: number }) =
 );
 
 export default function App() {
-  const [step, setStep] = useState<Step>('welcome');
+  const supabase = getSupabaseBrowserClient();
+  const [step, setStep] = useState<Step>('profile');
   const [profile, setProfile] = useState<BodyProfile>({
     height: '',
     weight: '',
@@ -89,12 +92,95 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
   const [showTryOn, setShowTryOn] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getSession().then(({ data, error }: { data: { session: Session | null }; error: AuthError | null }) => {
+      if (!active) {
+        return;
+      }
+
+      if (error) {
+        setAuthError(error.message);
+      }
+
+      setSession(data.session ?? null);
+      setUser(data.session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, nextSession: Session | null) => {
+      if (!active) {
+        return;
+      }
+
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setAuthLoading(false);
+      setAuthActionLoading(false);
+      setAuthError(null);
+
+      if (!nextSession) {
+        setStep("profile");
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const handleGoogleSignIn = async () => {
+    setAuthActionLoading(true);
+    setAuthError(null);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setAuthError(error.message);
+      setAuthActionLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAuthActionLoading(true);
+    setAuthError(null);
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthError(error.message);
+      setAuthActionLoading(false);
+      return;
+    }
+
+    setSession(null);
+    setUser(null);
+    setRecommendations([]);
+    setSelectedRec(null);
+    setShowTryOn(false);
+    setStep("profile");
+    setAuthActionLoading(false);
+  };
+
   const handleNext = async () => {
-    if (step === 'welcome') setStep('profile');
-    else if (step === 'profile') setStep('photo');
+    if (step === 'profile') setStep('photo');
     else if (step === 'photo') setStep('preferences');
     else if (step === 'preferences') setStep('budget');
     else if (step === 'budget') {
@@ -117,8 +203,7 @@ export default function App() {
   };
 
   const handleBack = () => {
-    if (step === 'profile') setStep('welcome');
-    else if (step === 'photo') setStep('profile');
+    if (step === 'photo') setStep('profile');
     else if (step === 'preferences') setStep('photo');
     else if (step === 'budget') setStep('preferences');
     else if (step === 'results') setStep('budget');
@@ -147,7 +232,7 @@ export default function App() {
 
   // --- Render Functions ---
 
-  const renderWelcome = () => (
+  const renderAuthGate = () => (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -160,13 +245,17 @@ export default function App() {
         FitMe <br/> <span className="italic font-normal text-5xl">AI Stylist</span>
       </h1>
       <p className="text-on-surface-variant mb-12 text-lg leading-relaxed">
-        See it on you. Buy it with confidence. Experience personalized fashion curation powered by neural aesthetics.
+        Sign in with Supabase to save your styling profile and unlock personalized fashion curation.
       </p>
+      {authError && (
+        <p className="mb-6 text-sm text-red-400">{authError}</p>
+      )}
       <button 
-        onClick={handleNext}
-        className="cta-gradient text-on-primary px-12 py-5 rounded-full font-bold tracking-widest uppercase text-sm shadow-2xl hover:scale-105 transition-transform flex items-center gap-3 mx-auto"
+        onClick={handleGoogleSignIn}
+        disabled={authActionLoading}
+        className="cta-gradient text-on-primary px-12 py-5 rounded-full font-bold tracking-widest uppercase text-sm shadow-2xl hover:scale-105 transition-transform flex items-center gap-3 mx-auto disabled:opacity-60 disabled:hover:scale-100"
       >
-        Begin Curation <ArrowRight size={18} />
+        {authActionLoading ? 'Redirecting...' : 'Continue With Google'} <ArrowRight size={18} />
       </button>
     </motion.div>
   );
@@ -577,27 +666,57 @@ export default function App() {
           <div className="flex items-center gap-12">
             <a href="/" className="font-serif text-2xl font-bold italic tracking-tighter">FitMe</a>
             <div className="hidden md:flex gap-8 items-center">
-              <button onClick={() => setStep('welcome')} className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity">Explore</button>
+              <button onClick={() => setStep('profile')} className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity">Explore</button>
               <button className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity">Wardrobe</button>
               <button className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity">AI Stylist</button>
             </div>
           </div>
           <div className="flex items-center gap-6">
             <button className="opacity-60 hover:opacity-100 transition-opacity"><Heart size={20} /></button>
-            <button className="opacity-60 hover:opacity-100 transition-opacity"><User size={20} /></button>
+            {user ? (
+              <button
+                onClick={handleSignOut}
+                disabled={authActionLoading}
+                className="rounded-full border border-outline-variant/20 px-4 py-2 text-[10px] font-bold uppercase tracking-widest opacity-80 hover:opacity-100 disabled:opacity-50"
+              >
+                {authActionLoading ? "Working..." : `Sign Out ${user.email ?? ""}`}
+              </button>
+            ) : (
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={authActionLoading}
+                className="opacity-60 hover:opacity-100 transition-opacity disabled:opacity-40"
+              >
+                <UserIcon size={20} />
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
       <main className="flex-grow pt-32">
-        <AnimatePresence mode="wait">
-          {step === 'welcome' && renderWelcome()}
-          {step === 'profile' && renderProfile()}
-          {step === 'photo' && renderPhoto()}
-          {step === 'preferences' && renderPreferences()}
-          {step === 'budget' && renderBudget()}
-          {step === 'results' && renderResults()}
-        </AnimatePresence>
+        {authLoading ? (
+          <div className="py-40 text-center">
+            <motion.div 
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+              className="inline-block mb-6"
+            >
+              <Sparkles size={48} className="text-secondary" />
+            </motion.div>
+            <p className="font-serif italic text-2xl">Checking your session...</p>
+          </div>
+        ) : !session ? (
+          renderAuthGate()
+        ) : (
+          <AnimatePresence mode="wait">
+            {step === 'profile' && renderProfile()}
+            {step === 'photo' && renderPhoto()}
+            {step === 'preferences' && renderPreferences()}
+            {step === 'budget' && renderBudget()}
+            {step === 'results' && renderResults()}
+          </AnimatePresence>
+        )}
       </main>
 
       {/* Footer */}
