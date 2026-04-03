@@ -1,50 +1,55 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Noto Serif", serif;
+  --font-body: "Manrope", sans-serif;
+  --font-label: "Manrope", sans-serif;
+
+  --color-primary: #000000;
+  --color-on-primary: #ffffff;
+  --color-secondary: #9a442d;
+  --color-secondary-container: #fc9174;
+  --color-surface: #fcf9f8;
+  --color-surface-bright: #fcf9f8;
+  --color-surface-dim: #dcd9d9;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f3f2;
+  --color-surface-container: #f0eded;
+  --color-surface-container-high: #eae7e7;
+  --color-surface-container-highest: #e5e2e1;
+  --color-on-surface: #1c1b1b;
+  --color-on-surface-variant: #444748;
+  --color-outline-variant: #c4c7c7;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
   }
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.imgDark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+@layer components {
+  .glass-panel {
+    @apply bg-surface/80 backdrop-blur-[20px];
   }
 
-  .imgLight {
-    display: none;
+  .cta-gradient {
+    background: linear-gradient(45deg, #9a442d 0%, #fc9174 100%);
   }
-  .imgDark {
-    display: unset;
+
+  /* Custom scrollbar for a premium feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-outline-variant/30 rounded-full;
   }
 }
